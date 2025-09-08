@@ -32,8 +32,13 @@
 
     <div class="w-full max-w-lg mx-auto text-center mb-4">
         <h1 class="text-4xl md:text-5xl font-bold text-green-400 mb-2">SNAKE</h1>
-        <div class="text-lg md:text-xl bg-gray-800 rounded-lg p-2 inline-block">
-            Score: <span id="score" class="font-bold text-yellow-400">0</span>
+        <div class="flex justify-center gap-4 text-lg md:text-xl">
+            <div class="bg-gray-800 rounded-lg p-2 px-4">
+                Score: <span id="score" class="font-bold text-yellow-400">0</span>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-2 px-4">
+                Best: <span id="bestScore" class="font-bold text-yellow-400">0</span>
+            </div>
         </div>
     </div>
 
@@ -62,17 +67,25 @@
         const ctx = canvas.getContext('2d');
 
         const scoreEl = document.getElementById('score');
+        const bestScoreEl = document.getElementById('bestScore');
         const finalScoreEl = document.getElementById('finalScore');
         const gameOverScreen = document.getElementById('gameOverScreen');
         const restartButton = document.getElementById('restartButton');
         
         // --- Game Configuration ---
-        const gridSize = 20; // 20x20 grid
+        const gridSize = 20;
+        const SNAKE_SPEED = 10; // Moves per second (game logic update rate)
         let canvasSize = canvas.offsetWidth;
         let tileSize = canvasSize / gridSize;
 
         // --- Game State ---
-        let snake, apple, bomb, direction, score, isGameOver, gameSpeed, bombTimer, gameLoopTimeoutId;
+        let snake, apple, bomb, direction, score, bestScore, isGameOver, bombTimer;
+        let lastUpdateTime = 0;
+        let gameAnimationId;
+        let lastTail = { x: 10, y: 10 };
+        let lastDirection = { x: 0, y: 0 };
+
+
         // Animation state
         let particles = [];
         let screenShake = 0;
@@ -85,27 +98,27 @@
         const rightButton = document.getElementById('right-button');
 
         function setupGame() {
-            // Initialize game state
-            snake = [{ x: 10, y: 10 }]; // Start in the middle
+            snake = [{ x: 10, y: 10 }];
             direction = { x: 0, y: 0 };
             score = 0;
+            bestScore = localStorage.getItem('snakeBestScore') || 0;
             isGameOver = false;
-            gameSpeed = 150; // Milliseconds per move
             bomb = null;
             particles = [];
             appleEatEffect = null;
             screenShake = 0;
             if (bombTimer) clearInterval(bombTimer);
-            if (gameLoopTimeoutId) clearTimeout(gameLoopTimeoutId);
+            if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
 
-            // Place the first apple
+            lastUpdateTime = 0;
+            lastTail = { ...snake[0] };
+            lastDirection = { ...direction };
+
             placeApple();
-            
-            // Set up bomb timer
             scheduleBomb();
 
-            // Reset UI
             scoreEl.textContent = score;
+            bestScoreEl.textContent = bestScore;
             gameOverScreen.classList.add('hidden');
             gameOverScreen.classList.remove('flex');
             gameOverScreen.style.opacity = 0;
@@ -116,94 +129,143 @@
             canvas.width = canvasSize;
             canvas.height = canvasSize;
             tileSize = canvasSize / gridSize;
-            // Redraw everything on resize
-            if(!isGameOver) {
-                draw();
-            }
         }
         
         window.addEventListener('resize', resizeCanvas);
         
-        // Initial setup
-        setupGame();
-        resizeCanvas();
-        gameLoop();
+        function gameLoop(currentTime) {
+            if (isGameOver) return;
 
-
-        function gameLoop() {
-            if (isGameOver) {
-                return;
+            gameAnimationId = requestAnimationFrame(gameLoop);
+            
+            if (lastUpdateTime === 0) {
+                lastUpdateTime = currentTime;
             }
-            update();
-            draw();
-            gameLoopTimeoutId = setTimeout(gameLoop, gameSpeed);
+
+            const elapsed = currentTime - lastUpdateTime;
+            if (elapsed > (1000 / SNAKE_SPEED)) {
+                update();
+                lastUpdateTime = currentTime - (elapsed % (1000 / SNAKE_SPEED));
+            }
+            
+            const progress = Math.min(1, (currentTime - lastUpdateTime) / (1000 / SNAKE_SPEED));
+            draw(progress);
         }
 
-        function update() {
-            if (isGameOver) return;
-            
-            // Only start moving if a direction has been chosen
-            if (direction.x === 0 && direction.y === 0) {
-                return;
-            }
+        // Initial setup
+        resizeCanvas();
+        setupGame();
+        gameLoop(0);
 
+
+        function update() {
+            if (direction.x === 0 && direction.y === 0) return;
+            
+            lastDirection = { ...direction };
             const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
 
-            // Wall collision
-            if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
-                return gameOver();
-            }
-
-            // Self collision
+            if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) return gameOver();
             for (let i = 1; i < snake.length; i++) {
-                if (head.x === snake[i].x && head.y === snake[i].y) {
-                    return gameOver();
-                }
+                if (head.x === snake[i].x && head.y === snake[i].y) return gameOver();
             }
-            
-            // Bomb collision
-            if (bomb && head.x === bomb.x && head.y === bomb.y) {
-                return gameOver(true); // Special game over for bomb
-            }
+            if (bomb && head.x === bomb.x && head.y === bomb.y) return gameOver(true);
 
             snake.unshift(head);
 
-            // Apple collision
             if (head.x === apple.x && head.y === apple.y) {
                 score++;
                 scoreEl.textContent = score;
                 appleEatEffect = {x: apple.x, y: apple.y, radius: 0, alpha: 1};
-                if (gameSpeed > 60) {
-                   gameSpeed -= 2;
-                }
                 placeApple();
             } else {
-                snake.pop();
+                lastTail = snake.pop();
             }
         }
 
-        function draw() {
+        function draw(progress) {
             ctx.save();
-            // Screen Shake effect
             if (screenShake > 0) {
-                const dx = (Math.random() - 0.5) * screenShake;
-                const dy = (Math.random() - 0.5) * screenShake;
-                ctx.translate(dx, dy);
+                ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
             }
 
-            // Clear canvas
-            ctx.fillStyle = '#1f2937'; // bg-gray-800
+            ctx.fillStyle = '#1f2937';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Draw snake
             snake.forEach((segment, index) => {
-                ctx.fillStyle = index === 0 ? '#4ade80' : '#34d399'; // Lighter green for head
-                ctx.fillRect(segment.x * tileSize, segment.y * tileSize, tileSize, tileSize);
-                ctx.strokeStyle = '#1f2937';
-                ctx.strokeRect(segment.x * tileSize, segment.y * tileSize, tileSize, tileSize);
-            });
+                const targetPos = segment;
+                let sourcePos;
+                
+                if (index === 0) {
+                     sourcePos = { x: segment.x - lastDirection.x, y: segment.y - lastDirection.y };
+                     if(lastDirection.x === 0 && lastDirection.y === 0) sourcePos = targetPos;
+                } else if (snake[index]) {
+                     const prevSegment = snake[index-1];
+                     // This logic seems complex, but it interpolates from the segment ahead of it
+                     const nextPosOfPrev = {x: prevSegment.x, y: prevSegment.y};
+                     const currentPosOfPrev = {x: prevSegment.x-lastDirection.x, y: prevSegment.y-lastDirection.y}
+                     sourcePos = snake[index+1] || lastTail;
+                }
 
-            // Draw apple
+                // A simpler, more reliable interpolation:
+                let prevX, prevY;
+                if (index === 0) {
+                    prevX = segment.x - lastDirection.x;
+                    prevY = segment.y - lastDirection.y;
+                } else {
+                    // For body segments, their previous position is the *current* position of the segment that follows them in the array
+                    // This works because the array shifts on every update.
+                    const prevSegment = snake[index + 1] || lastTail;
+                    prevX = prevSegment.x;
+                    prevY = prevSegment.y;
+                }
+
+                const drawX = (prevX + (segment.x - prevX) * progress) * tileSize;
+                const drawY = (prevY + (segment.y - prevY) * progress) * tileSize;
+
+
+                const gradient = ctx.createLinearGradient(drawX, drawY, drawX + tileSize, drawY + tileSize);
+                
+                if (index === 0) {
+                    gradient.addColorStop(0, '#4ade80'); // green-400
+                    gradient.addColorStop(1, '#16a34a'); // green-600
+                } else {
+                    gradient.addColorStop(0, '#34d399'); // green-500
+                    gradient.addColorStop(1, '#059669'); // green-700
+                }
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(drawX, drawY, tileSize, tileSize);
+                ctx.strokeStyle = '#111827'; // gray-900
+                ctx.strokeRect(drawX, drawY, tileSize, tileSize);
+
+                // Draw Eyes on Head
+                if (index === 0) {
+                    const eyeSize = tileSize / 5;
+                    ctx.fillStyle = 'white';
+                    if (direction.x === 1) { // Right
+                        ctx.beginPath();
+                        ctx.arc(drawX + tileSize / 2, drawY + tileSize / 4, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.arc(drawX + tileSize / 2, drawY + (tileSize * 3 / 4), eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.fill();
+                    } else if (direction.x === -1) { // Left
+                        ctx.beginPath();
+                        ctx.arc(drawX + tileSize / 2, drawY + tileSize / 4, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.arc(drawX + tileSize / 2, drawY + (tileSize * 3 / 4), eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.fill();
+                    } else if (direction.y === 1) { // Down
+                        ctx.beginPath();
+                        ctx.arc(drawX + tileSize / 4, drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.arc(drawX + (tileSize * 3 / 4), drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.fill();
+                    } else { // Up or initial state
+                        ctx.beginPath();
+                        ctx.arc(drawX + tileSize / 4, drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.arc(drawX + (tileSize * 3 / 4), drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                }
+            });
+            
             if (apple) {
                 ctx.fillStyle = '#f87171'; // red-400
                 ctx.beginPath();
@@ -211,27 +273,23 @@
                 ctx.fill();
             }
 
-            // Draw apple eat effect
             if (appleEatEffect) {
-                ctx.strokeStyle = `rgba(248, 113, 113, ${appleEatEffect.alpha})`; // red-400 with alpha
+                ctx.strokeStyle = `rgba(248, 113, 113, ${appleEatEffect.alpha})`;
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(appleEatEffect.x * tileSize + tileSize / 2, appleEatEffect.y * tileSize + tileSize / 2, appleEatEffect.radius, 0, 2 * Math.PI);
                 ctx.stroke();
                 appleEatEffect.radius += tileSize / 4;
                 appleEatEffect.alpha -= 0.1;
-                if (appleEatEffect.alpha <= 0) {
-                    appleEatEffect = null;
-                }
+                if (appleEatEffect.alpha <= 0) appleEatEffect = null;
             }
 
-            // Draw bomb
             if (bomb) {
-                ctx.fillStyle = '#6b7280'; // gray-500
+                ctx.fillStyle = '#6b7280';
                 ctx.beginPath();
                 ctx.arc(bomb.x * tileSize + tileSize / 2, bomb.y * tileSize + tileSize / 2, tileSize / 2.2, 0, 2 * Math.PI);
                 ctx.fill();
-                ctx.strokeStyle = '#facc15'; // yellow-400
+                ctx.strokeStyle = '#facc15';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.moveTo(bomb.x * tileSize + tileSize/2, bomb.y * tileSize + tileSize/2);
@@ -252,23 +310,16 @@
                 const angle = Math.random() * Math.PI * 2;
                 const speed = Math.random() * 5 + 2;
                 particles.push({
-                    x: canvasX,
-                    y: canvasY,
-                    dx: Math.cos(angle) * speed,
-                    dy: Math.sin(angle) * speed,
-                    radius: Math.random() * 3 + 2,
-                    alpha: 1,
-                    decay: Math.random() * 0.03 + 0.01
+                    x: canvasX, y: canvasY, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed,
+                    radius: Math.random() * 3 + 2, alpha: 1, decay: Math.random() * 0.03 + 0.01
                 });
             }
         }
 
         function explosionLoop() {
             if (particles.length === 0 && screenShake <= 0) return;
-            
             updateParticles();
             drawExplosion();
-            
             requestAnimationFrame(explosionLoop);
         }
 
@@ -278,7 +329,6 @@
                 p.x += p.dx;
                 p.y += p.dy;
                 p.alpha -= p.decay;
-
                 if (p.alpha <= 0) particles.splice(i, 1);
             }
             if (screenShake > 0) screenShake -= 1;
@@ -287,9 +337,7 @@
         function drawExplosion() {
             ctx.save();
             if (screenShake > 0) {
-                const dx = (Math.random() - 0.5) * screenShake;
-                const dy = (Math.random() - 0.5) * screenShake;
-                ctx.translate(dx, dy);
+                ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
             }
             
             ctx.fillStyle = '#1f2937';
@@ -297,14 +345,14 @@
 
             const fade = Math.max(0, 1 - (15 - screenShake) / 15);
             snake.forEach((segment, index) => {
-                ctx.fillStyle = index === 0 ? `rgba(74, 222, 128, ${fade})` : `rgba(52, 211, 153, ${fade})`;
+                ctx.fillStyle = `rgba(${index === 0 ? '74, 222, 128' : '52, 211, 153'}, ${fade})`;
                 ctx.fillRect(segment.x * tileSize, segment.y * tileSize, tileSize, tileSize);
             });
 
             particles.forEach(p => {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(250, 204, 21, ${p.alpha})`; // yellow-400
+                ctx.fillStyle = `rgba(250, 204, 21, ${p.alpha})`;
                 ctx.fill();
             });
             ctx.restore();
@@ -314,11 +362,7 @@
 
         function placeApple() {
             let newPosition;
-            do {
-                newPosition = {
-                    x: Math.floor(Math.random() * gridSize),
-                    y: Math.floor(Math.random() * gridSize)
-                };
+            do { newPosition = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
             } while (isOccupied(newPosition));
             apple = newPosition;
         }
@@ -326,23 +370,14 @@
         function placeBomb() {
             if (bomb) return; 
             let newPosition;
-            do {
-                newPosition = {
-                    x: Math.floor(Math.random() * gridSize),
-                    y: Math.floor(Math.random() * gridSize)
-                };
+            do { newPosition = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
             } while (isOccupied(newPosition) || (apple && newPosition.x === apple.x && newPosition.y === apple.y));
             bomb = newPosition;
-            
-            setTimeout(() => {
-                bomb = null;
-                scheduleBomb();
-            }, 4000 + Math.random() * 4000); // 4-8 seconds
+            setTimeout(() => { bomb = null; scheduleBomb(); }, 4000 + Math.random() * 4000);
         }
 
         function scheduleBomb() {
-             const delay = 5000 + Math.random() * 5000; // 5-10 seconds
-             bombTimer = setTimeout(placeBomb, delay);
+             bombTimer = setTimeout(placeBomb, 5000 + Math.random() * 5000);
         }
 
         function isOccupied(position) {
@@ -352,8 +387,14 @@
         function gameOver(hitBomb = false) {
             if (isGameOver) return;
             isGameOver = true;
-            clearTimeout(gameLoopTimeoutId);
             clearInterval(bombTimer);
+            if(gameAnimationId) cancelAnimationFrame(gameAnimationId);
+
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('snakeBestScore', bestScore);
+                bestScoreEl.textContent = bestScore;
+            }
 
             if(hitBomb) {
                 createExplosion(snake[0].x, snake[0].y);
@@ -369,30 +410,22 @@
             gameOverScreen.querySelector('h2').textContent = message;
             gameOverScreen.classList.remove('hidden');
             gameOverScreen.classList.add('flex');
-            setTimeout(() => {
-                gameOverScreen.style.opacity = 1;
-            }, 10);
+            setTimeout(() => { gameOverScreen.style.opacity = 1; }, 10);
         }
         
         function changeDirection(newDirection) {
-             if (direction.x === -newDirection.x && direction.y === -newDirection.y) {
-                return;
-            }
-            direction = newDirection;
+             if (snake.length > 1 && direction.x === -newDirection.x && direction.y === -newDirection.y) return;
+             direction = newDirection;
         }
 
         // Event Listeners
         document.addEventListener('keydown', e => {
             if (isGameOver) return;
             switch (e.key) {
-                case 'ArrowUp': case 'w':
-                    if (direction.y === 0) changeDirection({ x: 0, y: -1 }); break;
-                case 'ArrowDown': case 's':
-                    if (direction.y === 0) changeDirection({ x: 0, y: 1 }); break;
-                case 'ArrowLeft': case 'a':
-                    if (direction.x === 0) changeDirection({ x: -1, y: 0 }); break;
-                case 'ArrowRight': case 'd':
-                    if (direction.x === 0) changeDirection({ x: 1, y: 0 }); break;
+                case 'ArrowUp': case 'w': if (direction.y === 0) changeDirection({ x: 0, y: -1 }); break;
+                case 'ArrowDown': case 's': if (direction.y === 0) changeDirection({ x: 0, y: 1 }); break;
+                case 'ArrowLeft': case 'a': if (direction.x === 0) changeDirection({ x: -1, y: 0 }); break;
+                case 'ArrowRight': case 'd': if (direction.x === 0) changeDirection({ x: 1, y: 0 }); break;
             }
         });
         
@@ -403,7 +436,7 @@
 
         restartButton.addEventListener('click', () => {
              setupGame();
-             gameLoop();
+             gameLoop(0);
         });
     </script>
 </body>
