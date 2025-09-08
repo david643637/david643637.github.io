@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snake Game</title>
+    <title>Multiplayer Snake Game</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -22,427 +22,425 @@
         #right-button { grid-area: right; }
         #down-button { grid-area: down; }
 
-        /* Animation for Game Over screen */
-        #gameOverScreen {
+        #lobbyScreen, #gameOverScreen {
             transition: opacity 0.5s ease-in-out;
+        }
+        
+        #gameIdDisplay:hover {
+            cursor: pointer;
         }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-lg mx-auto text-center mb-4">
-        <h1 class="text-4xl md:text-5xl font-bold text-green-400 mb-2">SNAKE</h1>
-        <div class="flex justify-center gap-4 text-lg md:text-xl">
-            <div class="bg-gray-800 rounded-lg p-2 px-4">
-                Score: <span id="score" class="font-bold text-yellow-400">0</span>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-2 px-4">
-                Best: <span id="bestScore" class="font-bold text-yellow-400">0</span>
-            </div>
-        </div>
-    </div>
-
-    <div id="game-container" class="relative w-full max-w-lg mx-auto" style="aspect-ratio: 1/1;">
-        <canvas id="gameCanvas" class="bg-gray-800 rounded-lg shadow-2xl border-4 border-green-500 w-full h-full"></canvas>
-        <div id="gameOverScreen" class="absolute inset-0 bg-black bg-opacity-70 flex-col items-center justify-center rounded-lg hidden" style="opacity: 0;">
-            <h2 class="text-4xl text-red-500 font-bold mb-4">GAME OVER</h2>
-            <p class="text-xl mb-2">Your Score: <span id="finalScore" class="text-yellow-400">0</span></p>
-            <button id="restartButton" class="mt-4 px-6 py-3 bg-green-500 hover:bg-green-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
-                Play Again
+    <!-- Lobby Screen -->
+    <div id="lobbyScreen" class="w-full max-w-lg mx-auto text-center flex flex-col items-center justify-center">
+        <h1 class="text-4xl md:text-5xl font-bold text-green-400 mb-8">MULTIPLAYER SNAKE</h1>
+        <button id="createGameBtn" class="w-full max-w-xs mb-4 px-6 py-3 bg-green-500 hover:bg-green-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+            Create Game
+        </button>
+        <div class="w-full max-w-xs">
+            <input type="text" id="gameIdInput" placeholder="Enter Game ID" class="w-full p-3 bg-gray-800 border-2 border-gray-700 rounded-lg text-center uppercase tracking-widest focus:outline-none focus:border-green-500">
+            <button id="joinGameBtn" class="w-full mt-2 px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                Join Game
             </button>
         </div>
+        <p id="lobbyError" class="text-red-500 mt-4 h-6"></p>
     </div>
-    
-    <!-- Touch Controls for Mobile -->
-    <div id="touch-controls" class="mt-6 grid touch-control-grid gap-4 w-64 md:hidden">
-        <button id="up-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">▲</button>
-        <button id="left-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">◄</button>
-        <button id="right-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">►</button>
-        <button id="down-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">▼</button>
+
+    <!-- Game Screen (Initially Hidden) -->
+    <div id="gameScreen" class="hidden w-full">
+        <div class="w-full max-w-lg mx-auto text-center mb-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-green-400 mb-2">SNAKE</h1>
+            <div id="gameIdDisplayContainer" class="mb-2">
+                Game ID: 
+                <span id="gameIdDisplay" title="Click to copy" class="font-bold text-yellow-400 underline decoration-dotted"></span>
+            </div>
+            <div id="scoresContainer" class="flex justify-center flex-wrap gap-4 text-lg md:text-xl">
+                <!-- Scores will be dynamically inserted here -->
+            </div>
+        </div>
+
+        <div id="game-container" class="relative w-full max-w-lg mx-auto" style="aspect-ratio: 1/1;">
+            <canvas id="gameCanvas" class="bg-gray-800 rounded-lg shadow-2xl border-4 border-green-500 w-full h-full"></canvas>
+            <div id="gameOverScreen" class="absolute inset-0 bg-black bg-opacity-70 flex-col items-center justify-center rounded-lg hidden" style="opacity: 0;">
+                <h2 class="text-4xl text-red-500 font-bold mb-4">GAME OVER</h2>
+                <p class="text-xl mb-2">Waiting for other players...</p>
+                <button id="leaveGameBtn" class="mt-4 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                    Back to Lobby
+                </button>
+            </div>
+        </div>
+        
+        <div id="touch-controls" class="mt-6 grid touch-control-grid gap-4 w-64 md:hidden mx-auto">
+            <button id="up-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">▲</button>
+            <button id="left-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">◄</button>
+            <button id="right-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">►</button>
+            <button id="down-button" class="bg-green-500 p-4 rounded-lg shadow-lg text-2xl active:bg-green-600 transform active:scale-95">▼</button>
+        </div>
     </div>
 
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- Firebase Config (Provided by environment) ---
+        const firebaseConfig = { /* Your Firebase Config Here */ };
+        // NOTE: In a real environment, __firebase_config would be populated.
+        // For local testing, you must replace the above with your actual config.
+        const app = initializeApp(JSON.parse(window.__firebase_config || JSON.stringify(firebaseConfig)));
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- UI Elements ---
+        const lobbyScreen = document.getElementById('lobbyScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const createGameBtn = document.getElementById('createGameBtn');
+        const joinGameBtn = document.getElementById('joinGameBtn');
+        const gameIdInput = document.getElementById('gameIdInput');
+        const lobbyError = document.getElementById('lobbyError');
+        const gameIdDisplay = document.getElementById('gameIdDisplay');
+        const scoresContainer = document.getElementById('scoresContainer');
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-
-        const scoreEl = document.getElementById('score');
-        const bestScoreEl = document.getElementById('bestScore');
-        const finalScoreEl = document.getElementById('finalScore');
         const gameOverScreen = document.getElementById('gameOverScreen');
-        const restartButton = document.getElementById('restartButton');
-        
+        const leaveGameBtn = document.getElementById('leaveGameBtn');
+
         // --- Game Configuration ---
         const gridSize = 20;
         const SNAKE_SPEED = 10; // Moves per second (game logic update rate)
-        let canvasSize = canvas.offsetWidth;
-        let tileSize = canvasSize / gridSize;
-
+        const PLAYER_COLORS = ['#4ade80', '#60a5fa', '#f87171', '#fbbf24']; // Green, Blue, Red, Amber
+        
         // --- Game State ---
-        let snake, apple, bomb, direction, score, bestScore, isGameOver, bombTimer;
+        let localGameState = {};
+        let userId;
+        let gameId;
+        let isHost = false;
+        let gameUpdateInterval;
+        let unsubscribeFromGame;
+        
         let lastUpdateTime = 0;
         let gameAnimationId;
-        let lastTail = { x: 10, y: 10 };
-        let lastDirection = { x: 0, y: 0 };
 
-
-        // Animation state
-        let particles = [];
-        let screenShake = 0;
-        let appleEatEffect = null;
-
-        // --- Touch Controls ---
-        const upButton = document.getElementById('up-button');
-        const downButton = document.getElementById('down-button');
-        const leftButton = document.getElementById('left-button');
-        const rightButton = document.getElementById('right-button');
-
-        function setupGame() {
-            snake = [{ x: 10, y: 10 }];
-            direction = { x: 0, y: 0 };
-            score = 0;
-            bestScore = localStorage.getItem('snakeBestScore') || 0;
-            isGameOver = false;
-            bomb = null;
-            particles = [];
-            appleEatEffect = null;
-            screenShake = 0;
-            if (bombTimer) clearInterval(bombTimer);
-            if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
-
-            lastUpdateTime = 0;
-            lastTail = { ...snake[0] };
-            lastDirection = { ...direction };
-
-            placeApple();
-            scheduleBomb();
-
-            scoreEl.textContent = score;
-            bestScoreEl.textContent = bestScore;
-            gameOverScreen.classList.add('hidden');
-            gameOverScreen.classList.remove('flex');
-            gameOverScreen.style.opacity = 0;
-        }
-
-        function resizeCanvas() {
-            canvasSize = canvas.offsetWidth;
-            canvas.width = canvasSize;
-            canvas.height = canvasSize;
-            tileSize = canvasSize / gridSize;
-        }
-        
-        window.addEventListener('resize', resizeCanvas);
-        
-        function gameLoop(currentTime) {
-            if (isGameOver) return;
-
-            gameAnimationId = requestAnimationFrame(gameLoop);
-            
-            if (lastUpdateTime === 0) {
-                lastUpdateTime = currentTime;
-            }
-
-            const elapsed = currentTime - lastUpdateTime;
-            if (elapsed > (1000 / SNAKE_SPEED)) {
-                update();
-                lastUpdateTime = currentTime - (elapsed % (1000 / SNAKE_SPEED));
-            }
-            
-            const progress = Math.min(1, (currentTime - lastUpdateTime) / (1000 / SNAKE_SPEED));
-            draw(progress);
-        }
-
-        // Initial setup
-        resizeCanvas();
-        setupGame();
-        gameLoop(0);
-
-
-        function update() {
-            if (direction.x === 0 && direction.y === 0) return;
-            
-            lastDirection = { ...direction };
-            const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
-
-            if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) return gameOver();
-            for (let i = 1; i < snake.length; i++) {
-                if (head.x === snake[i].x && head.y === snake[i].y) return gameOver();
-            }
-            if (bomb && head.x === bomb.x && head.y === bomb.y) return gameOver(true);
-
-            snake.unshift(head);
-
-            if (head.x === apple.x && head.y === apple.y) {
-                score++;
-                scoreEl.textContent = score;
-                appleEatEffect = {x: apple.x, y: apple.y, radius: 0, alpha: 1};
-                placeApple();
-            } else {
-                lastTail = snake.pop();
-            }
-        }
-
-        function draw(progress) {
-            ctx.save();
-            if (screenShake > 0) {
-                ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            }
-
-            ctx.fillStyle = '#1f2937';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            snake.forEach((segment, index) => {
-                const targetPos = segment;
-                let sourcePos;
-                
-                if (index === 0) {
-                     sourcePos = { x: segment.x - lastDirection.x, y: segment.y - lastDirection.y };
-                     if(lastDirection.x === 0 && lastDirection.y === 0) sourcePos = targetPos;
-                } else if (snake[index]) {
-                     const prevSegment = snake[index-1];
-                     // This logic seems complex, but it interpolates from the segment ahead of it
-                     const nextPosOfPrev = {x: prevSegment.x, y: prevSegment.y};
-                     const currentPosOfPrev = {x: prevSegment.x-lastDirection.x, y: prevSegment.y-lastDirection.y}
-                     sourcePos = snake[index+1] || lastTail;
-                }
-
-                // A simpler, more reliable interpolation:
-                let prevX, prevY;
-                if (index === 0) {
-                    prevX = segment.x - lastDirection.x;
-                    prevY = segment.y - lastDirection.y;
+        async function main() {
+            try {
+                let userCredential;
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    userCredential = await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    // For body segments, their previous position is the *current* position of the segment that follows them in the array
-                    // This works because the array shifts on every update.
-                    const prevSegment = snake[index + 1] || lastTail;
-                    prevX = prevSegment.x;
-                    prevY = prevSegment.y;
+                    userCredential = await signInAnonymously(auth);
                 }
+                userId = userCredential.user.uid;
+                setupLobbyListeners();
+            } catch (error) {
+                console.error("Authentication failed:", error);
+                lobbyError.textContent = "Could not connect to server.";
+            }
+        }
 
-                const drawX = (prevX + (segment.x - prevX) * progress) * tileSize;
-                const drawY = (prevY + (segment.y - prevY) * progress) * tileSize;
+        function setupLobbyListeners() {
+            createGameBtn.onclick = createGame;
+            joinGameBtn.onclick = joinGame;
+            leaveGameBtn.onclick = leaveGame;
+            gameIdDisplay.onclick = () => {
+                navigator.clipboard.writeText(gameIdDisplay.textContent)
+                    .then(() => {
+                        const originalText = gameIdDisplay.textContent;
+                        gameIdDisplay.textContent = 'Copied!';
+                        setTimeout(() => gameIdDisplay.textContent = originalText, 1500);
+                    });
+            };
+        }
 
+        async function createGame() {
+            isHost = true;
+            gameId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            const playerColor = PLAYER_COLORS[0];
 
-                const gradient = ctx.createLinearGradient(drawX, drawY, drawX + tileSize, drawY + tileSize);
-                
-                if (index === 0) {
-                    gradient.addColorStop(0, '#4ade80'); // green-400
-                    gradient.addColorStop(1, '#16a34a'); // green-600
-                } else {
-                    gradient.addColorStop(0, '#34d399'); // green-500
-                    gradient.addColorStop(1, '#059669'); // green-700
-                }
-                
-                ctx.fillStyle = gradient;
-                ctx.fillRect(drawX, drawY, tileSize, tileSize);
-                ctx.strokeStyle = '#111827'; // gray-900
-                ctx.strokeRect(drawX, drawY, tileSize, tileSize);
-
-                // Draw Eyes on Head
-                if (index === 0) {
-                    const eyeSize = tileSize / 5;
-                    ctx.fillStyle = 'white';
-                    if (direction.x === 1) { // Right
-                        ctx.beginPath();
-                        ctx.arc(drawX + tileSize / 2, drawY + tileSize / 4, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.arc(drawX + tileSize / 2, drawY + (tileSize * 3 / 4), eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.fill();
-                    } else if (direction.x === -1) { // Left
-                        ctx.beginPath();
-                        ctx.arc(drawX + tileSize / 2, drawY + tileSize / 4, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.arc(drawX + tileSize / 2, drawY + (tileSize * 3 / 4), eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.fill();
-                    } else if (direction.y === 1) { // Down
-                        ctx.beginPath();
-                        ctx.arc(drawX + tileSize / 4, drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.arc(drawX + (tileSize * 3 / 4), drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.fill();
-                    } else { // Up or initial state
-                        ctx.beginPath();
-                        ctx.arc(drawX + tileSize / 4, drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.arc(drawX + (tileSize * 3 / 4), drawY + tileSize / 2, eyeSize / 2, 0, 2 * Math.PI);
-                        ctx.fill();
+            localGameState = {
+                players: {
+                    [userId]: {
+                        snake: [{ x: 10, y: 10 }],
+                        direction: { x: 0, y: 0 },
+                        color: playerColor,
+                        score: 0,
+                        isGameOver: false
                     }
-                }
-            });
-            
-            if (apple) {
-                ctx.fillStyle = '#f87171'; // red-400
-                ctx.beginPath();
-                ctx.arc(apple.x * tileSize + tileSize / 2, apple.y * tileSize + tileSize / 2, tileSize / 2.2, 0, 2 * Math.PI);
-                ctx.fill();
-            }
+                },
+                apple: { x: 15, y: 15 },
+                bomb: null,
+                hostId: userId,
+                status: "playing"
+            };
 
-            if (appleEatEffect) {
-                ctx.strokeStyle = `rgba(248, 113, 113, ${appleEatEffect.alpha})`;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(appleEatEffect.x * tileSize + tileSize / 2, appleEatEffect.y * tileSize + tileSize / 2, appleEatEffect.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                appleEatEffect.radius += tileSize / 4;
-                appleEatEffect.alpha -= 0.1;
-                if (appleEatEffect.alpha <= 0) appleEatEffect = null;
+            try {
+                const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                await setDoc(gameRef, localGameState);
+                await listenToGame(gameId);
+                switchToGameView();
+            } catch(error) {
+                console.error("Error creating game:", error);
+                lobbyError.textContent = "Failed to create game.";
             }
-
-            if (bomb) {
-                ctx.fillStyle = '#6b7280';
-                ctx.beginPath();
-                ctx.arc(bomb.x * tileSize + tileSize / 2, bomb.y * tileSize + tileSize / 2, tileSize / 2.2, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.strokeStyle = '#facc15';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(bomb.x * tileSize + tileSize/2, bomb.y * tileSize + tileSize/2);
-                ctx.lineTo(bomb.x * tileSize + tileSize/2, bomb.y * tileSize);
-                ctx.stroke();
-                ctx.lineWidth = 1;
-            }
-            ctx.restore();
         }
         
-        // --- Animation Functions ---
-
-        function createExplosion(gridX, gridY) {
-            screenShake = 15;
-            const canvasX = gridX * tileSize + tileSize / 2;
-            const canvasY = gridY * tileSize + tileSize / 2;
-            for (let i = 0; i < 50; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 5 + 2;
-                particles.push({
-                    x: canvasX, y: canvasY, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed,
-                    radius: Math.random() * 3 + 2, alpha: 1, decay: Math.random() * 0.03 + 0.01
-                });
-            }
-        }
-
-        function explosionLoop() {
-            if (particles.length === 0 && screenShake <= 0) return;
-            updateParticles();
-            drawExplosion();
-            requestAnimationFrame(explosionLoop);
-        }
-
-        function updateParticles() {
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.x += p.dx;
-                p.y += p.dy;
-                p.alpha -= p.decay;
-                if (p.alpha <= 0) particles.splice(i, 1);
-            }
-            if (screenShake > 0) screenShake -= 1;
-        }
-
-        function drawExplosion() {
-            ctx.save();
-            if (screenShake > 0) {
-                ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            }
-            
-            ctx.fillStyle = '#1f2937';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            const fade = Math.max(0, 1 - (15 - screenShake) / 15);
-            snake.forEach((segment, index) => {
-                ctx.fillStyle = `rgba(${index === 0 ? '74, 222, 128' : '52, 211, 153'}, ${fade})`;
-                ctx.fillRect(segment.x * tileSize, segment.y * tileSize, tileSize, tileSize);
-            });
-
-            particles.forEach(p => {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(250, 204, 21, ${p.alpha})`;
-                ctx.fill();
-            });
-            ctx.restore();
-        }
-
-        // --- Utility Functions ---
-
-        function placeApple() {
-            let newPosition;
-            do { newPosition = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
-            } while (isOccupied(newPosition));
-            apple = newPosition;
-        }
-
-        function placeBomb() {
-            if (bomb) return; 
-            let newPosition;
-            do { newPosition = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
-            } while (isOccupied(newPosition) || (apple && newPosition.x === apple.x && newPosition.y === apple.y));
-            bomb = newPosition;
-            setTimeout(() => { bomb = null; scheduleBomb(); }, 4000 + Math.random() * 4000);
-        }
-
-        function scheduleBomb() {
-             bombTimer = setTimeout(placeBomb, 5000 + Math.random() * 5000);
-        }
-
-        function isOccupied(position) {
-            return snake.some(segment => segment.x === position.x && segment.y === position.y);
-        }
-
-        function gameOver(hitBomb = false) {
-            if (isGameOver) return;
-            isGameOver = true;
-            clearInterval(bombTimer);
-            if(gameAnimationId) cancelAnimationFrame(gameAnimationId);
-
-            if (score > bestScore) {
-                bestScore = score;
-                localStorage.setItem('snakeBestScore', bestScore);
-                bestScoreEl.textContent = bestScore;
-            }
-
-            if(hitBomb) {
-                createExplosion(snake[0].x, snake[0].y);
-                explosionLoop();
-                setTimeout(() => showGameOverUI('BOOM!'), 800);
-            } else {
-                showGameOverUI('GAME OVER');
-            }
-        }
-
-        function showGameOverUI(message) {
-            finalScoreEl.textContent = score;
-            gameOverScreen.querySelector('h2').textContent = message;
-            gameOverScreen.classList.remove('hidden');
-            gameOverScreen.classList.add('flex');
-            setTimeout(() => { gameOverScreen.style.opacity = 1; }, 10);
-        }
-        
-        function changeDirection(newDirection) {
-             if (snake.length > 1 && direction.x === -newDirection.x && direction.y === -newDirection.y) return;
-             direction = newDirection;
-        }
-
-        // Event Listeners
-        document.addEventListener('keydown', e => {
-            if (isGameOver) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    restartButton.click();
-                }
+        async function joinGame() {
+            const idToJoin = gameIdInput.value.toUpperCase();
+            if (!idToJoin) {
+                lobbyError.textContent = "Please enter a Game ID.";
                 return;
             }
+
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', idToJoin);
+            try {
+                const gameSnap = await getDoc(gameRef);
+                if (!gameSnap.exists()) {
+                    lobbyError.textContent = "Game not found.";
+                    return;
+                }
+                
+                const gameData = gameSnap.data();
+                const playerCount = Object.keys(gameData.players).length;
+
+                if (playerCount >= PLAYER_COLORS.length) {
+                    lobbyError.textContent = "Game is full.";
+                    return;
+                }
+
+                const playerColor = PLAYER_COLORS[playerCount];
+                const newPlayer = {
+                    snake: [{ x: 5, y: 5 }],
+                    direction: { x: 0, y: 0 },
+                    color: playerColor,
+                    score: 0,
+                    isGameOver: false
+                };
+
+                await updateDoc(gameRef, {
+                    [`players.${userId}`]: newPlayer
+                });
+
+                await listenToGame(idToJoin);
+                switchToGameView();
+
+            } catch(error) {
+                 console.error("Error joining game:", error);
+                 lobbyError.textContent = "Failed to join game.";
+            }
+        }
+
+        async function leaveGame() {
+            if (unsubscribeFromGame) unsubscribeFromGame();
+            if (gameUpdateInterval) clearInterval(gameUpdateInterval);
+            
+            if (!isHost && gameId && userId) {
+                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                 await updateDoc(gameRef, { [`players.${userId}`]: deleteField() });
+            } 
+
+            gameId = null;
+            isHost = false;
+            unsubscribeFromGame = null;
+            localGameState = {};
+            
+            switchToLobbyView();
+        }
+
+        function listenToGame(id) {
+            gameId = id;
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+            unsubscribeFromGame = onSnapshot(gameRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    localGameState = docSnap.data();
+                    updateScoresUI();
+                    
+                    if(!localGameState.players || !localGameState.players[userId]) {
+                        // Player was removed from game, possibly by host leaving
+                        console.log("Player not found in game state, leaving.");
+                        alert("The game has ended or you have been removed.");
+                        leaveGame();
+                        return;
+                    }
+
+                    const myPlayer = localGameState.players[userId];
+                    if (myPlayer.isGameOver && !gameOverScreen.classList.contains('flex')) {
+                        gameOverScreen.classList.remove('hidden');
+                        gameOverScreen.classList.add('flex');
+                        setTimeout(() => { gameOverScreen.style.opacity = 1; }, 10);
+                    } else if (!myPlayer.isGameOver) {
+                        gameOverScreen.classList.add('hidden');
+                        gameOverScreen.classList.remove('flex');
+                        gameOverScreen.style.opacity = 0;
+                    }
+
+                } else {
+                    alert("The game has ended.");
+                    leaveGame();
+                }
+            });
+        }
+
+        function switchToGameView() {
+            lobbyScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            gameIdDisplay.textContent = gameId;
+
+            resizeCanvas();
+            if (isHost) {
+                gameUpdateInterval = setInterval(hostGameUpdate, 1000 / SNAKE_SPEED);
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function switchToLobbyView() {
+            gameScreen.classList.add('hidden');
+            lobbyScreen.classList.remove('hidden');
+            gameIdInput.value = '';
+            lobbyError.textContent = '';
+        }
+
+        function hostGameUpdate() {
+            if (!isHost || !localGameState.players) return;
+
+            let nextState = JSON.parse(JSON.stringify(localGameState));
+            let appleEaten = false;
+
+            Object.keys(nextState.players).forEach(pId => {
+                const player = nextState.players[pId];
+                if (player.isGameOver || (player.direction.x === 0 && player.direction.y === 0)) {
+                    return;
+                }
+
+                const head = { x: player.snake[0].x + player.direction.x, y: player.snake[0].y + player.direction.y };
+                
+                if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
+                    player.isGameOver = true;
+                    return;
+                }
+                for (let i = 1; i < player.snake.length; i++) {
+                    if (head.x === player.snake[i].x && head.y === player.snake[i].y) {
+                        player.isGameOver = true;
+                        return;
+                    }
+                }
+                 if (nextState.bomb && head.x === nextState.bomb.x && head.y === nextState.bomb.y) {
+                    player.isGameOver = true;
+                    return;
+                }
+
+                player.snake.unshift(head);
+
+                if (head.x === nextState.apple.x && head.y === nextState.apple.y) {
+                    player.score++;
+                    appleEaten = true;
+                } else {
+                    player.snake.pop();
+                }
+            });
+
+            if (appleEaten) {
+                nextState.apple = getNewRandomPos(nextState);
+            }
+            
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+            setDoc(gameRef, nextState).catch(err => console.error("Host update failed", err));
+        }
+
+        function getNewRandomPos(state) {
+            let newPosition;
+            let occupied = new Set();
+            Object.values(state.players).forEach(p => {
+                p.snake.forEach(seg => occupied.add(`${seg.x},${seg.y}`));
+            });
+             if (state.apple) occupied.add(`${state.apple.x},${state.apple.y}`);
+             if (state.bomb) occupied.add(`${state.bomb.x},${state.bomb.y}`);
+
+            do {
+                newPosition = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
+            } while (occupied.has(`${newPosition.x},${newPosition.y}`));
+            return newPosition;
+        }
+
+
+        function gameLoop(currentTime) {
+            gameAnimationId = requestAnimationFrame(gameLoop);
+            draw();
+        }
+
+        function draw() {
+            ctx.fillStyle = '#1f2937';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (!localGameState.players) return;
+            
+            Object.values(localGameState.players).forEach(player => {
+                if (player.isGameOver) return; 
+                player.snake.forEach((segment, index) => {
+                    ctx.fillStyle = player.color;
+                    ctx.fillRect(segment.x * (canvas.width / gridSize), segment.y * (canvas.height / gridSize), (canvas.width / gridSize), (canvas.height / gridSize));
+                    if (index === 0) {
+                         const eyeSize = (canvas.width / gridSize) / 5;
+                         ctx.fillStyle = 'white';
+                         ctx.fillRect(segment.x * (canvas.width / gridSize) + eyeSize, segment.y * (canvas.height / gridSize) + eyeSize, eyeSize, eyeSize);
+                         ctx.fillRect(segment.x * (canvas.width / gridSize) + (3*eyeSize), segment.y * (canvas.height / gridSize) + eyeSize, eyeSize, eyeSize);
+                    }
+                });
+            });
+
+            if (localGameState.apple) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(localGameState.apple.x * (canvas.width / gridSize), localGameState.apple.y * (canvas.height / gridSize), (canvas.width / gridSize), (canvas.height / gridSize));
+            }
+            if (localGameState.bomb) {
+                ctx.fillStyle = '#6b7280';
+                 ctx.fillRect(localGameState.bomb.x * (canvas.width / gridSize), localGameState.bomb.y * (canvas.height / gridSize), (canvas.width / gridSize), (canvas.height / gridSize));
+            }
+        }
+        
+        function updateScoresUI() {
+            if (!localGameState.players) return;
+            scoresContainer.innerHTML = '';
+            Object.values(localGameState.players).forEach(player => {
+                const scoreDiv = document.createElement('div');
+                scoreDiv.style.color = player.color;
+                scoreDiv.className = `p-2 px-4 rounded-lg font-bold ${player.isGameOver ? 'bg-red-900 line-through' : 'bg-gray-800'}`;
+                scoreDiv.innerHTML = `P: <span class="text-yellow-400">${player.score}</span>`;
+                scoresContainer.appendChild(scoreDiv);
+            });
+        }
+        
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        document.addEventListener('keydown', e => {
+            if (!gameId || !localGameState.players || !localGameState.players[userId] || localGameState.players[userId].isGameOver) return;
+            
+            const currentDirection = localGameState.players[userId].direction;
+            let newDirection = { ...currentDirection };
+
             switch (e.key) {
-                case 'ArrowUp': case 'w': if (direction.y === 0) changeDirection({ x: 0, y: -1 }); break;
-                case 'ArrowDown': case 's': if (direction.y === 0) changeDirection({ x: 0, y: 1 }); break;
-                case 'ArrowLeft': case 'a': if (direction.x === 0) changeDirection({ x: -1, y: 0 }); break;
-                case 'ArrowRight': case 'd': if (direction.x === 0) changeDirection({ x: 1, y: 0 }); break;
+                case 'ArrowUp': case 'w': if (currentDirection.y === 0) newDirection = { x: 0, y: -1 }; break;
+                case 'ArrowDown': case 's': if (currentDirection.y === 0) newDirection = { x: 0, y: 1 }; break;
+                case 'ArrowLeft': case 'a': if (currentDirection.x === 0) newDirection = { x: -1, y: 0 }; break;
+                case 'ArrowRight': case 'd': if (currentDirection.x === 0) newDirection = { x: 1, y: 0 }; break;
+            }
+
+            if (newDirection.x !== currentDirection.x || newDirection.y !== currentDirection.y) {
+                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                 updateDoc(gameRef, { [`players.${userId}.direction`]: newDirection });
             }
         });
-        
-        upButton.addEventListener('click', () => { if (!isGameOver && direction.y === 0) changeDirection({ x: 0, y: -1 }); });
-        downButton.addEventListener('click', () => { if (!isGameOver && direction.y === 0) changeDirection({ x: 0, y: 1 }); });
-        leftButton.addEventListener('click', () => { if (!isGameOver && direction.x === 0) changeDirection({ x: -1, y: 0 }); });
-        rightButton.addEventListener('click', () => { if (!isGameOver && direction.x === 0) changeDirection({ x: 1, y: 0 }); });
 
-        restartButton.addEventListener('click', () => {
-             setupGame();
-             gameLoop(0);
-        });
+        main();
+
     </script>
 </body>
 </html>
