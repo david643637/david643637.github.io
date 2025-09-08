@@ -420,7 +420,12 @@
 
         // Event Listeners
         document.addEventListener('keydown', e => {
-            if (isGameOver) return;
+            if (isGameOver) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    restartButton.click();
+                }
+                return;
+            }
             switch (e.key) {
                 case 'ArrowUp': case 'w': if (direction.y === 0) changeDirection({ x: 0, y: -1 }); break;
                 case 'ArrowDown': case 's': if (direction.y === 0) changeDirection({ x: 0, y: 1 }); break;
