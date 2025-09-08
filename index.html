@@ -36,12 +36,12 @@
     <!-- Lobby Screen -->
     <div id="lobbyScreen" class="w-full max-w-lg mx-auto text-center flex flex-col items-center justify-center">
         <h1 class="text-4xl md:text-5xl font-bold text-green-400 mb-8">MULTIPLAYER SNAKE</h1>
-        <button id="createGameBtn" class="w-full max-w-xs mb-4 px-6 py-3 bg-green-500 hover:bg-green-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+        <button id="createGameBtn" class="w-full max-w-xs mb-4 px-6 py-3 bg-green-500 hover:bg-green-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
             Create Game
         </button>
         <div class="w-full max-w-xs">
             <input type="text" id="gameIdInput" placeholder="Enter Game ID" class="w-full p-3 bg-gray-800 border-2 border-gray-700 rounded-lg text-center uppercase tracking-widest focus:outline-none focus:border-green-500">
-            <button id="joinGameBtn" class="w-full mt-2 px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105">
+            <button id="joinGameBtn" class="w-full mt-2 px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 Join Game
             </button>
         </div>
@@ -108,6 +108,11 @@
         const ctx = canvas.getContext('2d');
         const gameOverScreen = document.getElementById('gameOverScreen');
         const leaveGameBtn = document.getElementById('leaveGameBtn');
+        const upButton = document.getElementById('up-button');
+        const leftButton = document.getElementById('left-button');
+        const rightButton = document.getElementById('right-button');
+        const downButton = document.getElementById('down-button');
+
 
         // --- Game Configuration ---
         const gridSize = 20;
@@ -126,6 +131,7 @@
         let gameAnimationId;
 
         async function main() {
+            lobbyError.textContent = "Connecting...";
             try {
                 let userCredential;
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -135,6 +141,11 @@
                 }
                 userId = userCredential.user.uid;
                 setupLobbyListeners();
+
+                createGameBtn.disabled = false;
+                joinGameBtn.disabled = false;
+                lobbyError.textContent = "";
+
             } catch (error) {
                 console.error("Authentication failed:", error);
                 lobbyError.textContent = "Could not connect to server.";
@@ -153,6 +164,25 @@
                         setTimeout(() => gameIdDisplay.textContent = originalText, 1500);
                     });
             };
+
+            // Touch Controls
+            upButton.onclick = () => sendDirectionUpdate({ x: 0, y: -1 });
+            downButton.onclick = () => sendDirectionUpdate({ x: 0, y: 1 });
+            leftButton.onclick = () => sendDirectionUpdate({ x: -1, y: 0 });
+            rightButton.onclick = () => sendDirectionUpdate({ x: 1, y: 0 });
+        }
+
+        function sendDirectionUpdate(newDirection) {
+            if (!gameId || !localGameState.players || !localGameState.players[userId] || localGameState.players[userId].isGameOver) return;
+            
+            const currentDirection = localGameState.players[userId].direction;
+
+            // Prevent moving in the opposite direction
+            if (currentDirection.y !== 0 && newDirection.y !== 0) return;
+            if (currentDirection.x !== 0 && newDirection.x !== 0) return;
+
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+            updateDoc(gameRef, { [`players.${userId}.direction`]: newDirection });
         }
 
         async function createGame() {
@@ -424,18 +454,20 @@
             if (!gameId || !localGameState.players || !localGameState.players[userId] || localGameState.players[userId].isGameOver) return;
             
             const currentDirection = localGameState.players[userId].direction;
-            let newDirection = { ...currentDirection };
 
             switch (e.key) {
-                case 'ArrowUp': case 'w': if (currentDirection.y === 0) newDirection = { x: 0, y: -1 }; break;
-                case 'ArrowDown': case 's': if (currentDirection.y === 0) newDirection = { x: 0, y: 1 }; break;
-                case 'ArrowLeft': case 'a': if (currentDirection.x === 0) newDirection = { x: -1, y: 0 }; break;
-                case 'ArrowRight': case 'd': if (currentDirection.x === 0) newDirection = { x: 1, y: 0 }; break;
-            }
-
-            if (newDirection.x !== currentDirection.x || newDirection.y !== currentDirection.y) {
-                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-                 updateDoc(gameRef, { [`players.${userId}.direction`]: newDirection });
+                case 'ArrowUp': case 'w': 
+                    if (currentDirection.y === 0) sendDirectionUpdate({ x: 0, y: -1 });
+                    break;
+                case 'ArrowDown': case 's': 
+                    if (currentDirection.y === 0) sendDirectionUpdate({ x: 0, y: 1 });
+                    break;
+                case 'ArrowLeft': case 'a': 
+                    if (currentDirection.x === 0) sendDirectionUpdate({ x: -1, y: 0 });
+                    break;
+                case 'ArrowRight': case 'd': 
+                    if (currentDirection.x === 0) sendDirectionUpdate({ x: 1, y: 0 });
+                    break;
             }
         });
 
