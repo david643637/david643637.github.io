@@ -84,7 +84,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- Firebase Config (Provided by environment) ---
         const firebaseConfig = { /* Your Firebase Config Here */ };
@@ -126,8 +126,6 @@
         let isHost = false;
         let gameUpdateInterval;
         let unsubscribeFromGame;
-        
-        let lastUpdateTime = 0;
         let gameAnimationId;
 
         async function main() {
@@ -209,7 +207,7 @@
             try {
                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
                 await setDoc(gameRef, localGameState);
-                await listenToGame(gameId);
+                listenToGame(gameId);
                 switchToGameView();
             } catch(error) {
                 console.error("Error creating game:", error);
@@ -253,7 +251,7 @@
                     [`players.${userId}`]: newPlayer
                 });
 
-                await listenToGame(idToJoin);
+                listenToGame(idToJoin);
                 switchToGameView();
 
             } catch(error) {
@@ -263,20 +261,17 @@
         }
 
         async function leaveGame() {
-            if (unsubscribeFromGame) unsubscribeFromGame();
-            if (gameUpdateInterval) clearInterval(gameUpdateInterval);
-            
-            if (!isHost && gameId && userId) {
-                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-                 await updateDoc(gameRef, { [`players.${userId}`]: deleteField() });
+             // If host leaves, delete the whole game for everyone.
+            if (isHost && gameId) {
+                const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                await deleteDoc(gameRef).catch(err => console.error("Failed to delete game doc", err));
             } 
-
-            gameId = null;
-            isHost = false;
-            unsubscribeFromGame = null;
-            localGameState = {};
-            
-            switchToLobbyView();
+            // If client leaves, just remove themselves from the game.
+            else if (!isHost && gameId && userId) {
+                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+                 await updateDoc(gameRef, { [`players.${userId}`]: deleteField() }).catch(err => console.error("Failed to leave game", err));
+            }
+            // The onSnapshot listener will handle UI transition back to lobby.
         }
 
         function listenToGame(id) {
@@ -287,11 +282,9 @@
                     localGameState = docSnap.data();
                     updateScoresUI();
                     
-                    if(!localGameState.players || !localGameState.players[userId]) {
-                        // Player was removed from game, possibly by host leaving
-                        console.log("Player not found in game state, leaving.");
-                        alert("The game has ended or you have been removed.");
-                        leaveGame();
+                    if(gameId && (!localGameState.players || !localGameState.players[userId])) {
+                        // Current player is no longer in the game state, leave.
+                        cleanUpAndGoToLobby("You have left the game.");
                         return;
                     }
 
@@ -307,10 +300,23 @@
                     }
 
                 } else {
-                    alert("The game has ended.");
-                    leaveGame();
+                    // Game document no longer exists.
+                    cleanUpAndGoToLobby("The host has ended the game.");
                 }
             });
+        }
+        
+        function cleanUpAndGoToLobby(message) {
+            if (unsubscribeFromGame) unsubscribeFromGame();
+            if (gameUpdateInterval) clearInterval(gameUpdateInterval);
+            if(gameAnimationId) cancelAnimationFrame(gameAnimationId);
+
+            gameId = null;
+            isHost = false;
+            unsubscribeFromGame = null;
+            localGameState = {};
+            
+            switchToLobbyView(message);
         }
 
         function switchToGameView() {
@@ -322,14 +328,14 @@
             if (isHost) {
                 gameUpdateInterval = setInterval(hostGameUpdate, 1000 / SNAKE_SPEED);
             }
-            requestAnimationFrame(gameLoop);
+            gameAnimationId = requestAnimationFrame(gameLoop);
         }
 
-        function switchToLobbyView() {
+        function switchToLobbyView(message = '') {
             gameScreen.classList.add('hidden');
             lobbyScreen.classList.remove('hidden');
             gameIdInput.value = '';
-            lobbyError.textContent = '';
+            lobbyError.textContent = message;
         }
 
         function hostGameUpdate() {
@@ -337,6 +343,13 @@
 
             let nextState = JSON.parse(JSON.stringify(localGameState));
             let appleEaten = false;
+
+            // --- Collision Detection Setup ---
+            const allSegments = new Set();
+            Object.values(nextState.players).forEach(p => {
+                if (p.isGameOver) return;
+                p.snake.forEach(seg => allSegments.add(`${seg.x},${seg.y}`));
+            });
 
             Object.keys(nextState.players).forEach(pId => {
                 const player = nextState.players[pId];
@@ -346,21 +359,33 @@
 
                 const head = { x: player.snake[0].x + player.direction.x, y: player.snake[0].y + player.direction.y };
                 
+                // --- Collision Checks ---
+                // 1. Wall collision
                 if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
                     player.isGameOver = true;
                     return;
                 }
-                for (let i = 1; i < player.snake.length; i++) {
-                    if (head.x === player.snake[i].x && head.y === player.snake[i].y) {
-                        player.isGameOver = true;
-                        return;
-                    }
+                
+                // 2. Snake collision (with any snake, including self)
+                // Temporarily remove own tail from collision set because we will move out of it
+                const ownTail = player.snake[player.snake.length - 1];
+                const ownTailKey = `${ownTail.x},${ownTail.y}`;
+                allSegments.delete(ownTailKey);
+
+                if (allSegments.has(`${head.x},${head.y}`)) {
+                    player.isGameOver = true;
+                    allSegments.add(ownTailKey); // add it back for next player's check
+                    return;
                 }
+                allSegments.add(ownTailKey); // add it back
+
+                 // 3. Bomb collision
                  if (nextState.bomb && head.x === nextState.bomb.x && head.y === nextState.bomb.y) {
                     player.isGameOver = true;
                     return;
                 }
 
+                // --- Move Snake ---
                 player.snake.unshift(head);
 
                 if (head.x === nextState.apple.x && head.y === nextState.apple.y) {
@@ -395,9 +420,9 @@
         }
 
 
-        function gameLoop(currentTime) {
-            gameAnimationId = requestAnimationFrame(gameLoop);
+        function gameLoop() {
             draw();
+            gameAnimationId = requestAnimationFrame(gameLoop);
         }
 
         function draw() {
@@ -410,7 +435,7 @@
                 if (player.isGameOver) return; 
                 player.snake.forEach((segment, index) => {
                     ctx.fillStyle = player.color;
-                    ctx.fillRect(segment.x * (canvas.width / gridSize), segment.y * (canvas.height / gridSize), (canvas.width / gridSize), (canvas.height / gridSize));
+                    ctx.fillRect(segment.x * (canvas.width / gridSize), segment.y * (canvas.height / gridSize), (canvas.width / gridSize) -1 , (canvas.height / gridSize) -1);
                     if (index === 0) {
                          const eyeSize = (canvas.width / gridSize) / 5;
                          ctx.fillStyle = 'white';
@@ -433,40 +458,40 @@
         function updateScoresUI() {
             if (!localGameState.players) return;
             scoresContainer.innerHTML = '';
-            Object.values(localGameState.players).forEach(player => {
+            Object.keys(localGameState.players).sort().forEach((playerId, index) => {
+                const player = localGameState.players[playerId];
                 const scoreDiv = document.createElement('div');
                 scoreDiv.style.color = player.color;
                 scoreDiv.className = `p-2 px-4 rounded-lg font-bold ${player.isGameOver ? 'bg-red-900 line-through' : 'bg-gray-800'}`;
-                scoreDiv.innerHTML = `P: <span class="text-yellow-400">${player.score}</span>`;
+                scoreDiv.innerHTML = `P${index + 1}: <span class="text-yellow-400">${player.score}</span>`;
                 scoresContainer.appendChild(scoreDiv);
             });
         }
         
         function resizeCanvas() {
             const container = document.getElementById('game-container');
-            canvas.width = container.offsetWidth;
-            canvas.height = container.offsetHeight;
+            let size = Math.min(container.offsetWidth, window.innerHeight * 0.6);
+            canvas.width = size;
+            canvas.height = size;
         }
 
         window.addEventListener('resize', resizeCanvas);
 
         document.addEventListener('keydown', e => {
             if (!gameId || !localGameState.players || !localGameState.players[userId] || localGameState.players[userId].isGameOver) return;
-            
-            const currentDirection = localGameState.players[userId].direction;
 
             switch (e.key) {
                 case 'ArrowUp': case 'w': 
-                    if (currentDirection.y === 0) sendDirectionUpdate({ x: 0, y: -1 });
+                    sendDirectionUpdate({ x: 0, y: -1 });
                     break;
                 case 'ArrowDown': case 's': 
-                    if (currentDirection.y === 0) sendDirectionUpdate({ x: 0, y: 1 });
+                    sendDirectionUpdate({ x: 0, y: 1 });
                     break;
                 case 'ArrowLeft': case 'a': 
-                    if (currentDirection.x === 0) sendDirectionUpdate({ x: -1, y: 0 });
+                    sendDirectionUpdate({ x: -1, y: 0 });
                     break;
                 case 'ArrowRight': case 'd': 
-                    if (currentDirection.x === 0) sendDirectionUpdate({ x: 1, y: 0 });
+                    sendDirectionUpdate({ x: 1, y: 0 });
                     break;
             }
         });
