@@ -45,7 +45,7 @@
                 Join Game
             </button>
         </div>
-        <p id="lobbyError" class="text-red-500 mt-4 h-6"></p>
+        <p id="lobbyStatus" class="text-yellow-400 mt-4 h-6"></p>
     </div>
 
     <!-- Game Screen (Initially Hidden) -->
@@ -86,22 +86,13 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // --- Firebase Config (Provided by environment) ---
-        const firebaseConfig = { /* Your Firebase Config Here */ };
-        // NOTE: In a real environment, __firebase_config would be populated.
-        // For local testing, you must replace the above with your actual config.
-        const app = initializeApp(JSON.parse(window.__firebase_config || JSON.stringify(firebaseConfig)));
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
         // --- UI Elements ---
         const lobbyScreen = document.getElementById('lobbyScreen');
         const gameScreen = document.getElementById('gameScreen');
         const createGameBtn = document.getElementById('createGameBtn');
         const joinGameBtn = document.getElementById('joinGameBtn');
         const gameIdInput = document.getElementById('gameIdInput');
-        const lobbyError = document.getElementById('lobbyError');
+        const lobbyStatus = document.getElementById('lobbyStatus');
         const gameIdDisplay = document.getElementById('gameIdDisplay');
         const scoresContainer = document.getElementById('scoresContainer');
         const canvas = document.getElementById('gameCanvas');
@@ -112,7 +103,6 @@
         const leftButton = document.getElementById('left-button');
         const rightButton = document.getElementById('right-button');
         const downButton = document.getElementById('down-button');
-
 
         // --- Game Configuration ---
         const gridSize = 20;
@@ -127,9 +117,37 @@
         let gameUpdateInterval;
         let unsubscribeFromGame;
         let gameAnimationId;
+        
+        // --- Firebase State ---
+        let app, auth, db;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        function initializeFirebase() {
+            try {
+                // Use a placeholder for local development if the environment variable is not set.
+                const firebaseConfigString = window.__firebase_config || '{"apiKey": "INVALID_KEY"}';
+                const firebaseConfig = JSON.parse(firebaseConfigString);
+
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "INVALID_KEY") {
+                    throw new Error("Firebase configuration is missing or invalid.");
+                }
+
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                return true;
+            } catch (error) {
+                console.error("CRITICAL: Firebase initialization failed.", error);
+                lobbyStatus.textContent = "Error: Game cannot load.";
+                lobbyStatus.className = 'text-red-500 mt-4 h-6';
+                createGameBtn.disabled = true;
+                joinGameBtn.disabled = true;
+                return false;
+            }
+        }
 
         async function main() {
-            lobbyError.textContent = "Connecting...";
+            lobbyStatus.textContent = "Connecting to server...";
             try {
                 let userCredential;
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -142,11 +160,13 @@
 
                 createGameBtn.disabled = false;
                 joinGameBtn.disabled = false;
-                lobbyError.textContent = "";
+                lobbyStatus.textContent = "Connected. Ready to play!";
+                setTimeout(() => { if(lobbyStatus.textContent === "Connected. Ready to play!") lobbyStatus.textContent = "" }, 3000);
 
             } catch (error) {
                 console.error("Authentication failed:", error);
-                lobbyError.textContent = "Could not connect to server.";
+                lobbyStatus.textContent = "Connection failed. Please refresh.";
+                lobbyStatus.className = 'text-red-500 mt-4 h-6';
             }
         }
 
@@ -175,7 +195,6 @@
             
             const currentDirection = localGameState.players[userId].direction;
 
-            // Prevent moving in the opposite direction
             if (currentDirection.y !== 0 && newDirection.y !== 0) return;
             if (currentDirection.x !== 0 && newDirection.x !== 0) return;
 
@@ -211,14 +230,14 @@
                 switchToGameView();
             } catch(error) {
                 console.error("Error creating game:", error);
-                lobbyError.textContent = "Failed to create game.";
+                lobbyStatus.textContent = "Failed to create game.";
             }
         }
         
         async function joinGame() {
             const idToJoin = gameIdInput.value.toUpperCase();
             if (!idToJoin) {
-                lobbyError.textContent = "Please enter a Game ID.";
+                lobbyStatus.textContent = "Please enter a Game ID.";
                 return;
             }
 
@@ -226,52 +245,47 @@
             try {
                 const gameSnap = await getDoc(gameRef);
                 if (!gameSnap.exists()) {
-                    lobbyError.textContent = "Game not found.";
+                    lobbyStatus.textContent = "Game not found.";
                     return;
                 }
                 
                 const gameData = gameSnap.data();
-                const playerCount = Object.keys(gameData.players).length;
+                const usedColors = Object.values(gameData.players).map(p => p.color);
+                const availableColor = PLAYER_COLORS.find(c => !usedColors.includes(c));
 
-                if (playerCount >= PLAYER_COLORS.length) {
-                    lobbyError.textContent = "Game is full.";
+                if (!availableColor) {
+                    lobbyStatus.textContent = "Game is full.";
                     return;
                 }
-
-                const playerColor = PLAYER_COLORS[playerCount];
+                
                 const newPlayer = {
-                    snake: [{ x: 5, y: 5 }],
+                    snake: [getNewRandomPos(gameData)],
                     direction: { x: 0, y: 0 },
-                    color: playerColor,
+                    color: availableColor,
                     score: 0,
                     isGameOver: false
                 };
 
-                await updateDoc(gameRef, {
-                    [`players.${userId}`]: newPlayer
-                });
+                await updateDoc(gameRef, { [`players.${userId}`]: newPlayer });
 
                 listenToGame(idToJoin);
                 switchToGameView();
 
             } catch(error) {
                  console.error("Error joining game:", error);
-                 lobbyError.textContent = "Failed to join game.";
+                 lobbyStatus.textContent = "Failed to join game.";
             }
         }
 
         async function leaveGame() {
-             // If host leaves, delete the whole game for everyone.
             if (isHost && gameId) {
                 const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
                 await deleteDoc(gameRef).catch(err => console.error("Failed to delete game doc", err));
             } 
-            // If client leaves, just remove themselves from the game.
             else if (!isHost && gameId && userId) {
                  const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
                  await updateDoc(gameRef, { [`players.${userId}`]: deleteField() }).catch(err => console.error("Failed to leave game", err));
             }
-            // The onSnapshot listener will handle UI transition back to lobby.
         }
 
         function listenToGame(id) {
@@ -283,7 +297,6 @@
                     updateScoresUI();
                     
                     if(gameId && (!localGameState.players || !localGameState.players[userId])) {
-                        // Current player is no longer in the game state, leave.
                         cleanUpAndGoToLobby("You have left the game.");
                         return;
                     }
@@ -300,7 +313,6 @@
                     }
 
                 } else {
-                    // Game document no longer exists.
                     cleanUpAndGoToLobby("The host has ended the game.");
                 }
             });
@@ -335,7 +347,7 @@
             gameScreen.classList.add('hidden');
             lobbyScreen.classList.remove('hidden');
             gameIdInput.value = '';
-            lobbyError.textContent = message;
+            lobbyStatus.textContent = message;
         }
 
         function hostGameUpdate() {
@@ -344,7 +356,6 @@
             let nextState = JSON.parse(JSON.stringify(localGameState));
             let appleEaten = false;
 
-            // --- Collision Detection Setup ---
             const allSegments = new Set();
             Object.values(nextState.players).forEach(p => {
                 if (p.isGameOver) return;
@@ -359,33 +370,23 @@
 
                 const head = { x: player.snake[0].x + player.direction.x, y: player.snake[0].y + player.direction.y };
                 
-                // --- Collision Checks ---
-                // 1. Wall collision
                 if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize) {
-                    player.isGameOver = true;
-                    return;
+                    player.isGameOver = true; return;
                 }
                 
-                // 2. Snake collision (with any snake, including self)
-                // Temporarily remove own tail from collision set because we will move out of it
                 const ownTail = player.snake[player.snake.length - 1];
                 const ownTailKey = `${ownTail.x},${ownTail.y}`;
                 allSegments.delete(ownTailKey);
 
                 if (allSegments.has(`${head.x},${head.y}`)) {
-                    player.isGameOver = true;
-                    allSegments.add(ownTailKey); // add it back for next player's check
-                    return;
+                    player.isGameOver = true; allSegments.add(ownTailKey); return;
                 }
-                allSegments.add(ownTailKey); // add it back
+                allSegments.add(ownTailKey);
 
-                 // 3. Bomb collision
                  if (nextState.bomb && head.x === nextState.bomb.x && head.y === nextState.bomb.y) {
-                    player.isGameOver = true;
-                    return;
+                    player.isGameOver = true; return;
                 }
 
-                // --- Move Snake ---
                 player.snake.unshift(head);
 
                 if (head.x === nextState.apple.x && head.y === nextState.apple.y) {
@@ -398,6 +399,13 @@
 
             if (appleEaten) {
                 nextState.apple = getNewRandomPos(nextState);
+            }
+
+            // Bomb logic
+            if (!nextState.bomb && Math.random() < 0.02) { // 2% chance per tick to spawn a bomb
+                nextState.bomb = getNewRandomPos(nextState);
+            } else if (nextState.bomb && Math.random() < 0.05) { // 5% chance per tick to remove bomb
+                nextState.bomb = null;
             }
             
             const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
@@ -495,8 +503,11 @@
                     break;
             }
         });
-
-        main();
+        
+        // --- Start the application ---
+        if (initializeFirebase()) {
+            main();
+        }
 
     </script>
 </body>
